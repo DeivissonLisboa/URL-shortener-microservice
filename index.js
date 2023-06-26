@@ -2,6 +2,7 @@ require("dotenv").config()
 const express = require("express")
 const cors = require("cors")
 const URL = require("url").URL
+const dns = require("dns")
 const bodyParser = require("body-parser")
 const mongoose = require("mongoose")
 const Schema = mongoose.Schema
@@ -37,43 +38,48 @@ app.use(bodyParser.urlencoded({ extended: false }))
 
 app.use("/public", express.static(`${process.cwd()}/public`))
 
-app.get("/", function (req, res) {
+app.get("/", function(req, res) {
   res.sendFile(process.cwd() + "/views/index.html")
 })
 
 function validateUrl(url) {
   try {
-    new URL(url)
+    let hostname = new URL(url).hostname
+    dns.lookup(hostname, (err, address) => {
+      if (err) return false
+    })
     return true
   } catch (err) {
     return false
   }
 }
 
-app.post("/api/shorturl", async (req, res) => {
-  let original_url = req.body.url
+app.post("/api/shorturl", (req, res) => {
+  let original_url = new URL(req.body.url)
 
-  if (validateUrl(original_url)) {
-    let short_url = (await ShortUrl.countDocuments()) + 1
+  dns.lookup(original_url.hostname, async (err) => {
+    if (err) {
+      res.json({
+        error: "invalid url",
+      })
+    } else {
+      let short_url = (await ShortUrl.countDocuments()) + 1
 
-    let data = {
-      original_url,
-      short_url,
+      let data = {
+        original_url,
+        short_url,
+      }
+
+      try {
+        await ShortUrl.create(data)
+      } catch (err) {
+        console.error(err)
+        res.sendStatus(500)
+      }
+
+      res.json(data)
     }
-
-    try {
-      await ShortUrl.create(data)
-    } catch (err) {
-      console.error(err)
-      res.sendStatus(500)
-    }
-
-    res.json(data)
-  } else {
-    res.json({
-      error: "invalid url",
-    })
-  }
+  })
 })
 
 app.get("/api/shorturl/:short_url", async (req, res) => {
@@ -87,6 +93,6 @@ app.get("/api/shorturl/:short_url", async (req, res) => {
   }
 })
 
-app.listen(port, function () {
+app.listen(port, function() {
   console.log(`Listening on port ${port}`)
 })
